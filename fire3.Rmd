@@ -1,0 +1,215 @@
+---
+title: "Fire Incident Analysis"
+author: "Your Name"
+date: "2024-03-28"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(rvest)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(cronR)
+```
+
+```{r}
+# Function to scrape data
+scrape_day_data <- function(region, day_link) {
+  # Complete URL
+  day_url <- paste0(base_url, day_link)
+  
+  # Read HTML content
+  page_content <- read_html(day_url)
+  
+  # Initialize an empty list to store incident data
+  incidents_data <- list()
+  
+  # Extract incident data
+  incident_nodes <- page_content %>% html_nodes(".report__table")
+  
+  for (node in incident_nodes) {
+    incident_number <- node %>% html_nodes(xpath = ".//div[contains(@class, 'report__table__row')][1]//div[@class='report__table__cell report__table__cell--value']") %>% html_text(trim = TRUE)
+    datetime <- node %>% html_nodes(xpath = ".//div[contains(@class, 'report__table__row')][2]//div[@class='report__table__cell report__table__cell--value']") %>% html_text(trim = TRUE)
+    location <- node %>% html_nodes(xpath = ".//div[contains(@class, 'report__table__row')][3]//div[@class='report__table__cell report__table__cell--value']") %>% html_text(trim = TRUE)
+    duration <- node %>% html_nodes(xpath = ".//div[contains(@class, 'report__table__row')][4]//div[@class='report__table__cell report__table__cell--value']") %>% html_text(trim = TRUE)
+    attending_stations <- node %>% html_nodes(xpath = ".//div[contains(@class, 'report__table__row')][5]//div[@class='report__table__cell report__table__cell--value']") %>% html_text(trim = TRUE)
+    result <- node %>% html_nodes(xpath = ".//div[contains(@class, 'report__table__row')][6]//div[@class='report__table__cell report__table__cell--value']") %>% html_text(trim = TRUE)
+    
+    # Split datetime into date and time
+    datetime_parts <- strsplit(datetime, " ")
+    date <- datetime_parts[[1]][1]
+    time <- datetime_parts[[1]][2]
+    
+    # Split attending stations into a list
+    attending_stations_list <- strsplit(attending_stations, ", ")
+    
+    # Append this incident to the list
+    incidents_data <- append(incidents_data, list(tibble(Region = region,
+                                                         IncidentNumber = incident_number,
+                                                         Date = date,
+                                                         Time = time,
+                                                         Location = location,
+                                                         Duration = duration,
+                                                         AttendingStations = attending_stations_list,
+                                                         Result = result)))
+  }
+  
+  # Combine all incidents into one data frame
+  incidents_df <- bind_rows(incidents_data)
+  return(incidents_df)
+}
+
+# Placeholder for all scraped data
+all_data <- list()
+
+# Base URL for the website
+base_url <- "https://www.fireandemergency.nz/"
+
+# Regions and their identifiers (for illustrative purposes; adjust as necessary)
+regions <- c("North", "Central", "South")
+
+# Iterate over each region
+for (region in regions) {
+    # Example link structure for days under each region (adjust based on actual URL patterns)
+    day_links <- c("incidents-and-news/incident-reports/incidents?region=1&day=Thursday", "incidents-and-news/incident-reports/incidents?region=2&day=Thursday", "incidents-and-news/incident-reports/incidents?region=3&day=Thursday", 
+"incidents-and-news/incident-reports/incidents?region=1&day=Wednesday",
+"incidents-and-news/incident-reports/incidents?region=2&day=Wednesday",
+"incidents-and-news/incident-reports/incidents?region=3&day=Wednesday",
+"incidents-and-news/incident-reports/incidents?region=1&day=Tuesday",
+"incidents-and-news/incident-reports/incidents?region=2&day=Tuesday",
+"incidents-and-news/incident-reports/incidents?region=3&day=Tuesday",
+"incidents-and-news/incident-reports/incidents?region=1&day=Monday",
+"incidents-and-news/incident-reports/incidents?region=2&day=Monday",
+"incidents-and-news/incident-reports/incidents?region=3&day=Monday",
+"incidents-and-news/incident-reports/incidents?region=1&day=Sunday",
+"incidents-and-news/incident-reports/incidents?region=2&day=Sunday",
+"incidents-and-news/incident-reports/incidents?region=3&day=Sunday",
+"incidents-and-news/incident-reports/incidents?region=1&day=Saturday",
+"incidents-and-news/incident-reports/incidents?region=2&day=Saturday",
+"incidents-and-news/incident-reports/incidents?region=3&day=Saturday",
+"incidents-and-news/incident-reports/incidents?region=1&day=Friday",
+"incidents-and-news/incident-reports/incidents?region=2&day=Friday",
+"incidents-and-news/incident-reports/incidents?region=3&day=Friday"
+                   )
+
+    # Scrape data for each day in the current region
+    for (day_link in day_links) {
+        # Call the scrape function and store the returned data
+        scraped_data <- scrape_day_data(region, day_link)
+        
+        # Append the data to the all_data list
+        all_data <- append(all_data, list(scraped_data))
+    }
+}
+
+# Combine all individual dataframes into one
+final_data <- bind_rows(all_data)
+
+# Save dataframe to a CSV file
+write.csv(final_data, "web_scraped_firedata.csv", row.names = FALSE)
+
+# Convert Duration to numeric if necessary
+final_data$Duration <- as.numeric(final_data$Duration)  
+
+# Top 25 longest duration incidents
+top_longest_duration <- final_data %>%
+  arrange(desc(Duration)) %>%
+  head(25)
+
+# Top 25 most common results
+top_results <- final_data %>%
+  count(Result, sort = TRUE) %>%
+  head(25)
+
+# Attending stations that occurred in the most incidents
+attending_stations <- final_data %>%
+  unnest(AttendingStations) %>%
+  count(AttendingStations, sort = TRUE) %>%
+  head(25)
+
+# Plotting
+
+# Top ten results for each region
+top_results_by_region <- final_data %>%
+  group_by(Region, Result) %>%
+  summarize(Count = n()) %>%
+  arrange(Region, desc(Count)) %>%
+  slice_max(order_by = Count, n = 10) %>%
+  ungroup()
+
+plot1 <- ggplot(top_results_by_region, aes(x = reorder(Result, Count), y = Count, fill = Region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Top Ten Results for Each Region", y = "Number of Incidents", x = "Result") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("North" = "skyblue", "Central" = "salmon", "South" = "lightgreen"))
+
+
+plot2 <- ggplot(top_results, aes(x = reorder(Result, n), y = n)) +
+  geom_bar(stat = "identity", fill = "salmon") +
+  theme_minimal() +
+  labs(title = "Top 25 Most Common Results", y = "Number of Incidents", x = "") +
+  coord_flip()
+
+plot3 <- ggplot(attending_stations, aes(x = reorder(AttendingStations, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  theme_minimal() +
+  labs(title = "Top 25 Attending Stations in Incidents", y = "Number of Incidents", x = "Attending Stations") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Unnest the AttendingStations list column in final_data
+final_data_unnested <- final_data %>%
+  unnest(AttendingStations)
+
+# Convert the AttendingStations column in top_results_filtered to a character type
+top_results_filtered <- top_results_filtered %>%
+  mutate(AttendingStations = as.character(AttendingStations))
+
+# Filter final_data_unnested to include only the incidents where the attending station matches one of the top 5 attending stations for each result
+filtered_data <- final_data_unnested %>%
+  semi_join(top_results_filtered, by = c("AttendingStations", "Result"))
+
+# Count occurrences of each result for each attending station
+result_counts <- filtered_data %>%
+  count(AttendingStations, Result)
+
+# Sort the result counts by the number of occurrences, and keep only the top 5 results for each attending station
+top_results_by_station <- result_counts %>%
+  group_by(AttendingStations) %>%
+  top_n(5, n) %>%
+  ungroup() %>%
+  arrange(AttendingStations, desc(n))
+
+# Print intermediate results
+print("Filtered Data:")
+print(head(filtered_data))
+print("Result Counts:")
+print(head(result_counts))
+print("Top Results by Station:")
+print(head(top_results_by_station))
+
+# Merge the top results with the filtered data
+merged_data <- filtered_data %>%
+  semi_join(top_results_by_station, by = c("AttendingStations", "Result"))
+
+# Create stacked bar chart
+stacked_bar <- merged_data %>%
+  ggplot(aes(x = AttendingStations, fill = Result)) +
+  geom_bar() +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 5 Results for Each Attending Station", x = "Attending Station", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+#stacked_bar
+#plot1
+#plot2
+#plot3
+```
