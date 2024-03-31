@@ -247,20 +247,7 @@ heatmap <- final_data %>%
 print(heatmap)
 ```
 
-```{r}
-# Create a bar chart
-bar_chart <- final_data %>%
-  count(Location) %>%
-  ggplot(aes(x = reorder(Location, n), y = n)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  labs(title = "Incidents by Location (Bar Chart)",
-       x = "Location",
-       y = "Incident Count") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-# Show the bar chart
-print(bar_chart)
+```{r future considerations}
 
 # If I can get latitude and longitude coordinates for each location in the final_data dataframe
 # Create a dot density map
@@ -285,22 +272,6 @@ print(bar_chart)
 # theme_minimal()
 # Show the choropleth map
 #print(choropleth_map)
-
-# Create a clustered bar chart
-clustered_bar_chart <- final_data %>%
-  group_by(ClusterVariable) %>%
-  count(Location) %>%
-  ggplot(aes(x = reorder(Location, n), y = n, fill = ClusterVariable)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  labs(title = "Incidents by Location (Clustered Bar Chart)",
-       x = "Location",
-       y = "Incident Count",
-       fill = "Cluster") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-# Show the clustered bar chart
-print(clustered_bar_chart)
 
 
 ```
